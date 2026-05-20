@@ -230,6 +230,7 @@ document.addEventListener("DOMContentLoaded", () => {
       if (vista === "tcs")       renderTCs();
       if (vista === "fondos")    renderFondos();
       if (vista === "deuda")     renderDeuda();
+      if (vista === "ajustes")   renderAjustes();
     });
   });
 
@@ -282,3 +283,11 @@ document.addEventListener("DOMContentLoaded", () => {
   // Deuda: recalcular al cambiar aporte
   document.getElementById("aporte-mensual")?.addEventListener("input", renderDeuda);
 });
+
+// ── Ajustes tab switcher ───────────────────────────────────────────────────
+function switchAjuste(panel, el) {
+  document.querySelectorAll(".ajuste-panel").forEach(p => p.classList.remove("active"));
+  document.querySelectorAll(".ajuste-tab").forEach(t => t.classList.remove("active"));
+  document.getElementById("panel-" + panel).classList.add("active");
+  el.classList.add("active");
+}

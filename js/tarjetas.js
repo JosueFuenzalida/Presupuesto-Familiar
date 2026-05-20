@@ -12,7 +12,7 @@ async function cargarDebitos() {
 }
 
 function pctUsoTC(tc) {
-  const cupo  = parseInt(tc["Cupo Total"]) || 0;
+  const cupo  = parseInt(tc["Cupo"]) || 0;
   const usado = parseInt(tc["Usado"])      || 0;
   if (cupo === 0) return 0;
   return Math.round((usado / cupo) * 100);
@@ -29,12 +29,12 @@ function totalDeuda() {
 }
 
 function totalCupo() {
-  return tcsData.reduce((sum, tc) => sum + (parseInt(tc["Cupo Total"]) || 0), 0);
+  return tcsData.reduce((sum, tc) => sum + (parseInt(tc["Cupo"]) || 0), 0);
 }
 
 function totalDisponibleTC() {
   return tcsData.reduce((sum, tc) => {
-    const cupo  = parseInt(tc["Cupo Total"]) || 0;
+    const cupo  = parseInt(tc["Cupo"]) || 0;
     const usado = parseInt(tc["Usado"])      || 0;
     return sum + Math.max(0, cupo - usado);
   }, 0);
