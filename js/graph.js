@@ -51,16 +51,24 @@ async function buscarArchivo() {
   }
 
 async function leerHoja(hoja) {
-  const id = await buscarArchivo();
-  if (!id) return null;
-  const data = await graphGet(`/me/drive/items/${id}/workbook/worksheets/${encodeURIComponent(hoja)}/usedRange`);
-  if (!data || !data.values || data.values.length < 2) return [];
-  const headers = data.values[0];
-  return data.values.slice(1).map(row => {
-    const obj = {};
-    headers.forEach((h, i) => { obj[h] = row[i] !== undefined ? row[i] : ""; });
-    return obj;
-  });
+  try {
+    const token = await obtenerToken();
+    if (!token) return [];
+    const url = `https://graph.microsoft.com/v1.0/me/drive/root:/${CONFIG.excelFileName}:/workbook/worksheets/${encodeURIComponent(hoja)}/usedRange`;
+    const r = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+    if (!r.ok) { console.error("leerHoja error:", hoja, r.status); return []; }
+    const data = await r.json();
+    if (!data.values || data.values.length < 2) return [];
+    const headers = data.values[0];
+    return data.values.slice(1).map(row => {
+      const obj = {};
+      headers.forEach((h, i) => { obj[h] = row[i] !== undefined ? row[i] : ""; });
+      return obj;
+    });
+  } catch(e) {
+    console.error("leerHoja excepción:", hoja, e);
+    return [];
+  }
 }
 
 async function agregarFila(hoja, valores) {
