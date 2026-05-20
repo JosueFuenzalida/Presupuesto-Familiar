@@ -37,16 +37,18 @@ async function graphPatch(url, body) {
 
 async function buscarArchivo() {
   if (fileId) return fileId;
-  const data = await graphGet(`/me/drive/root/search(q='${CONFIG.excelFileName}')`);
-  if (!data || !data.value || data.value.length === 0) {
-    mostrarError(`No se encontró el archivo "${CONFIG.excelFileName}" en OneDrive. Verifica que esté en la raíz.`);
+  try {
+    const data = await graphGet(`/me/drive/root:/${CONFIG.excelFileName}`);
+    if (!data || !data.id) {
+      mostrarError(`No se encontró "${CONFIG.excelFileName}" en la raíz de OneDrive.`);
+      return null;
+    }
+    fileId = data.id;
+    return fileId;
+  } catch (e) {
+    mostrarError("Error al acceder a OneDrive. Verifica los permisos.");
     return null;
   }
-  const archivo = data.value.find(f => f.name === CONFIG.excelFileName);
-  if (!archivo) { mostrarError("Archivo no encontrado."); return null; }
-  fileId = archivo.id;
-  return fileId;
-}
 
 async function leerHoja(hoja) {
   const id = await buscarArchivo();
