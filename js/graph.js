@@ -58,9 +58,10 @@ async function leerHoja(hoja) {
     const r = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
     if (!r.ok) { console.error("leerHoja error:", hoja, r.status); return []; }
     const data = await r.json();
-    if (!data.values || data.values.length < 2) return [];
-    const headers = data.values[0];
-    return data.values.slice(1).map(row => {
+    if (!data.values || data.values.length < 3) return [];
+    // Fila 0 = título, Fila 1 = headers, Fila 2+ = datos
+    const headers = data.values[1];
+    return data.values.slice(2).map(row => {
       const obj = {};
       headers.forEach((h, i) => { obj[h] = row[i] !== undefined ? row[i] : ""; });
       return obj;
