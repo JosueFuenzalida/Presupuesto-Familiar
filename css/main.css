@@ -392,3 +392,31 @@ body {
 .venc-vencida{ background:rgba(231,76,60,.3);    color:var(--red); }
 .venc-mora   { background:rgba(231,76,60,.5);    color:#fff; }
 
+
+/* ── SYNC INDICATOR ── */
+#sync-indicator {
+  display: inline-flex; align-items: center; gap: 4px;
+  cursor: pointer; padding: 5px 8px;
+  border-radius: 20px; background: var(--bg3);
+  border: 1px solid var(--border);
+  transition: all var(--transition);
+  min-width: 28px; justify-content: center;
+}
+#sync-indicator:hover { border-color: var(--border2); }
+.sync-dot {
+  width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
+}
+.sync-dot.ok      { background: var(--green); }
+.sync-dot.pending { background: var(--yellow); }
+.sync-dot.error   { background: var(--red); }
+.sync-dot.syncing {
+  background: var(--accent);
+  animation: pulse 1s ease-in-out infinite;
+}
+@keyframes pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%       { opacity: .5; transform: scale(.8); }
+}
+.sync-count {
+  font-size: 11px; font-weight: 700; color: var(--yellow);
+}
