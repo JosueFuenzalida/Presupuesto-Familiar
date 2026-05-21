@@ -2,34 +2,40 @@ async function registrarGasto(fecha, fondo, descripcion, monto, medioPago, tcCue
   const montoInt = parseInt(monto);
   if (!montoInt || montoInt <= 0) { mostrarError("Monto inválido."); return false; }
 
-  // 1. Agregar fila en hoja Gastos
-  const ok = await agregarFila(CONFIG.sheets.gastos, [
-    fecha, fondo, descripcion, montoInt, medioPago, tcCuenta, cuotas || "No", notas || ""
+  // 1. Encolar fila en Gastos (no bloquea)
+  syncFila(CONFIG.sheets.gastos, [
+    fecha, fondo, descripcion, montoInt, medioPago, tcCuenta||"", cuotas||"No", notas||""
   ]);
-  if (!ok) { mostrarError("Error al guardar el gasto."); return false; }
 
-  // 2. Descontar del fondo correspondiente
-  await descontarFondo(fondo, montoInt);
+  // 2. Descontar del fondo en memoria + encolar celda
+  const idxF = fondosData.findIndex(f => f["Fondo"] === fondo);
+  if (idxF >= 0) {
+    const nuevoSaldo = (parseInt(fondosData[idxF]["Saldo Actual"])||0) - montoInt;
+    fondosData[idxF]["Saldo Actual"] = nuevoSaldo;
+    syncCelda(CONFIG.sheets.fondos, `D${idxF+3}`, nuevoSaldo);
+  }
 
-  // 3. Si fue con TC, actualizar saldo usado
+  // 3. Si TC: actualizar saldo usado en memoria + encolar
   if (medioPago === "TC" && tcCuenta) {
-    const tc = tcsData.find(t => t["Nombre"] === tcCuenta);
-    if (tc) {
-      const nuevoUsado = (parseInt(tc["Usado"]) || 0) + montoInt;
-      await actualizarSaldoTC(tcCuenta, nuevoUsado);
+    const idxT = tcsData.findIndex(t => t["Nombre"] === tcCuenta);
+    if (idxT >= 0) {
+      const nuevoUsado = (parseInt(tcsData[idxT]["Usado"])||0) + montoInt;
+      tcsData[idxT]["Usado"] = nuevoUsado;
+      syncCelda(CONFIG.sheets.tcs, `D${idxT+3}`, nuevoUsado);
     }
   }
 
-  // 4. Si fue con débito, descontar saldo
+  // 4. Si Débito: descontar saldo en memoria + encolar
   if (medioPago === "Débito" && tcCuenta) {
-    const deb = debitosData.find(d => d["Nombre"] === tcCuenta);
-    if (deb) {
-      const nuevoSaldo = (parseInt(deb["Saldo Actual"]) || 0) - montoInt;
-      await actualizarSaldoDebito(tcCuenta, nuevoSaldo);
+    const idxD = debitosData.findIndex(d => d["Nombre"] === tcCuenta);
+    if (idxD >= 0) {
+      const nuevoSaldo = (parseInt(debitosData[idxD]["Saldo Actual"])||0) - montoInt;
+      debitosData[idxD]["Saldo Actual"] = nuevoSaldo;
+      syncCelda(CONFIG.sheets.debitos, `C${idxD+3}`, nuevoSaldo);
     }
   }
 
-  mostrarExito("Gasto registrado ✓");
+  mostrarExito("Gasto guardado — sincronizando...");
   return true;
 }
 

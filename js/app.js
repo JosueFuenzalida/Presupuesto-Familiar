@@ -301,6 +301,7 @@ async function init() {
   renderDashboard();
   renderFormGasto();
   renderFormIngreso();
+  iniciarSync();
   loading(false);
   mostrarVista("dashboard");
 }

@@ -88,7 +88,7 @@ async function guardarTC(idx) {
     K:tc["Prioridad"]||0, L:tc["Activa"]||"SI" };
   let ok = true;
   for (const [col, val] of Object.entries(cols)) {
-    if (!await actualizarCelda(CONFIG.sheets.tcs, `${col}${fila}`, val)) ok = false;
+    syncCelda(CONFIG.sheets.tcs, `${col}${fila}`, val)) ok = false;
   }
   ok ? mostrarExito("TC guardada ✓") : mostrarError("Error al guardar");
   renderAjusteTCs();
@@ -161,7 +161,7 @@ async function guardarDebito(idx) {
   const fila = idx + 3;
   let ok = true;
   for (const [col, val] of Object.entries({ A:d["Banco"], B:d["Nombre"], C:d["Saldo Actual"], F:d["Activa"]||"SI" })) {
-    if (!await actualizarCelda(CONFIG.sheets.debitos, `${col}${fila}`, val)) ok = false;
+    syncCelda(CONFIG.sheets.debitos, `${col}${fila}`, val)) ok = false;
   }
   ok ? mostrarExito("Cuenta guardada ✓") : mostrarError("Error al guardar");
 }
@@ -212,9 +212,9 @@ async function guardarFondo(idx) {
   const f = fondosData[idx];
   const fila = idx + 3;
   let ok = true;
-  ok = await actualizarCelda(CONFIG.sheets.fondos, `A${fila}`, f["Fondo"]) && ok;
-  ok = await actualizarCelda(CONFIG.sheets.fondos, `C${fila}`, f["Presupuesto Mensual"]) && ok;
-  ok = await actualizarCelda(CONFIG.sheets.fondos, `D${fila}`, f["Saldo Actual"]) && ok;
+  syncCelda(CONFIG.sheets.fondos, `A${fila}`, f["Fondo"]) && ok;
+  syncCelda(CONFIG.sheets.fondos, `C${fila}`, f["Presupuesto Mensual"]) && ok;
+  syncCelda(CONFIG.sheets.fondos, `D${fila}`, f["Saldo Actual"]) && ok;
   ok ? mostrarExito("Fondo guardado ✓") : mostrarError("Error al guardar");
   toggleEditFondo(idx);
 }
@@ -290,8 +290,8 @@ async function guardarReglas(tipo) {
   let ok = true;
   for (let i = 0; i < reglas.length; i++) {
     const fila = i + 4;
-    ok = await actualizarCelda(CONFIG.sheets.reglas, `${b.colTipo}${fila}`, reglas[i].tipo) && ok;
-    ok = await actualizarCelda(CONFIG.sheets.reglas, `${b.colValor}${fila}`, reglas[i].valor) && ok;
+    syncCelda(CONFIG.sheets.reglas, `${b.colTipo}${fila}`, reglas[i].tipo) && ok;
+    syncCelda(CONFIG.sheets.reglas, `${b.colValor}${fila}`, reglas[i].valor) && ok;
   }
   ok ? mostrarExito(`Reglas "${tipo}" guardadas ✓`) : mostrarError("Error al guardar reglas");
 }
