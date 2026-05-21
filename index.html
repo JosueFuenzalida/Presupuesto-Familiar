@@ -2,49 +2,50 @@
 <html lang="es">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
-  <meta name="theme-color" content="#1565C0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="theme-color" content="#111111">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black">
   <title>Presupuesto Familiar</title>
   <link rel="manifest" href="manifest.json">
   <link rel="stylesheet" href="css/main.css">
 </head>
 <body>
 
-<!-- LOADING -->
 <div id="loadingScreen">
   <div class="spinner"></div>
-  <p style="color:#6B7280;font-size:14px;">Cargando datos...</p>
+  <p>Cargando datos...</p>
 </div>
 
-<!-- TOAST -->
 <div id="toast" class="toast"></div>
 
 <!-- LOGIN -->
 <div id="loginScreen" style="display:none">
-  <div class="login-icon">💰</div>
-  <h1>Presupuesto Familiar</h1>
-  <p>Conectado a tu Excel en OneDrive.<br>Inicia sesión con tu cuenta Microsoft.</p>
-  <button class="btn btn-primary" style="max-width:280px" onclick="iniciarSesion()">
-    Iniciar sesión con Microsoft
-  </button>
+  <div class="login-card">
+    <div class="login-icon">💰</div>
+    <h1>Presupuesto</h1>
+    <p>Conectado a tu Excel en OneDrive.<br>Inicia sesión con tu cuenta Microsoft.</p>
+    <button class="btn btn-primary" onclick="iniciarSesion()">Iniciar sesión con Microsoft</button>
+  </div>
 </div>
 
-<!-- APP SHELL -->
+<!-- APP -->
 <div id="appShell" style="display:none">
 
-  <!-- TOPBAR -->
   <div class="topbar">
-    <h1>💰 Presupuesto</h1>
-    <div style="display:flex;align-items:center;gap:10px;">
-      <span class="user" id="topbar-user"></span>
+    <div class="topbar-logo">
+      <span>💰 Presupuesto</span>
+      <span class="version">v2.0</span>
+    </div>
+    <div class="topbar-right">
+      <span class="topbar-user" id="topbar-user"></span>
       <button class="btn-logout" onclick="cerrarSesion()">Salir</button>
     </div>
   </div>
 
-  <!-- CONTENIDO -->
   <div class="contenido">
 
-    <!-- VISTA: DASHBOARD -->
+    <!-- DASHBOARD -->
     <div id="vista-dashboard" class="vista">
       <div class="metricas">
         <div class="metrica rojo">
@@ -64,22 +65,28 @@
           <div class="valor" id="dash-disponible">$0</div>
         </div>
       </div>
-
       <div class="card">
-        <div class="card-title">⚠️ Alertas TCs</div>
+        <div class="card-title">⚠ Alertas</div>
         <div id="dash-alertas"></div>
       </div>
-
       <div class="card">
         <div class="card-title">Gastos por categoría</div>
         <div class="chart-wrap"><canvas id="chart-gastos"></canvas></div>
       </div>
     </div>
 
-    <!-- VISTA: TCs -->
+    <!-- TCs -->
     <div id="vista-tcs" class="vista" style="display:none">
-      <div class="sec-header">
-        <h2>Tarjetas de Crédito</h2>
+      <div class="sec-header"><h2>Tarjetas de crédito</h2></div>
+      <div class="metricas" style="grid-template-columns:repeat(2,1fr)">
+        <div class="metrica rojo">
+          <div class="label">Deuda total</div>
+          <div class="valor" id="tc-total-deuda">$0</div>
+        </div>
+        <div class="metrica naranja">
+          <div class="label">Mantención total</div>
+          <div class="valor" id="tc-total-mant">$0</div>
+        </div>
       </div>
       <div id="lista-tcs"></div>
       <div class="card">
@@ -88,142 +95,199 @@
       </div>
     </div>
 
-    <!-- VISTA: FONDOS -->
+    <!-- FONDOS -->
     <div id="vista-fondos" class="vista" style="display:none">
-      <div class="sec-header">
-        <h2>Fondos / Cajas</h2>
-      </div>
-      <div class="card">
-        <div id="lista-fondos"></div>
-      </div>
+      <div class="sec-header"><h2>Fondos / Cajas</h2></div>
+      <div class="card"><div id="lista-fondos"></div></div>
       <div class="card">
         <div class="card-title">Presupuesto vs disponible</div>
         <div class="chart-wrap"><canvas id="chart-fondos"></canvas></div>
       </div>
     </div>
 
-    <!-- VISTA: GASTO -->
+    <!-- GASTO -->
     <div id="vista-gasto" class="vista" style="display:none">
       <div class="sec-header"><h2>Registrar gasto</h2></div>
       <div class="card">
         <form id="form-gasto">
-          <div class="form-group">
-            <label>Fecha</label>
-            <input type="text" id="gasto-fecha" placeholder="DD/MM/AAAA" required>
-          </div>
-          <div class="form-group">
-            <label>Categoría / Fondo</label>
-            <select id="gasto-fondo" required></select>
-          </div>
-          <div class="form-group">
-            <label>Descripción</label>
-            <input type="text" id="gasto-desc" placeholder="ej. Supermercado Lider" required>
-          </div>
-          <div class="form-group">
-            <label>Monto ($)</label>
-            <input type="number" id="gasto-monto" placeholder="0" min="1" required>
-          </div>
-          <div class="form-group">
-            <label>Medio de pago</label>
-            <select id="gasto-medio"></select>
-          </div>
-          <div class="form-group">
-            <label>TC / Cuenta</label>
-            <select id="gasto-cuenta"></select>
-          </div>
-          <div class="form-group">
-            <label>¿En cuotas?</label>
+          <div class="form-group"><label>Fecha</label>
+            <input type="text" id="gasto-fecha" placeholder="DD/MM/AAAA" required></div>
+          <div class="form-group"><label>Categoría / Fondo</label>
+            <select id="gasto-fondo" required></select></div>
+          <div class="form-group"><label>Descripción</label>
+            <input type="text" id="gasto-desc" placeholder="ej. Supermercado" required></div>
+          <div class="form-group"><label>Monto ($)</label>
+            <input type="number" id="gasto-monto" placeholder="0" min="1" required></div>
+          <div class="form-group"><label>Medio de pago</label>
+            <select id="gasto-medio"></select></div>
+          <div class="form-group"><label>TC / Cuenta</label>
+            <select id="gasto-cuenta"></select></div>
+          <div class="form-group"><label>¿En cuotas?</label>
             <select id="gasto-cuotas">
-              <option value="No">No</option>
-              <option value="2">2 cuotas</option>
-              <option value="3">3 cuotas</option>
-              <option value="6">6 cuotas</option>
-              <option value="12">12 cuotas</option>
-              <option value="18">18 cuotas</option>
-              <option value="24">24 cuotas</option>
-            </select>
-          </div>
-          <div class="form-group">
-            <label>Notas (opcional)</label>
-            <input type="text" id="gasto-notas" placeholder="">
-          </div>
+              <option value="No">Sin cuotas</option>
+              <option value="2">2 cuotas</option><option value="3">3 cuotas</option>
+              <option value="6">6 cuotas</option><option value="12">12 cuotas</option>
+              <option value="18">18 cuotas</option><option value="24">24 cuotas</option>
+            </select></div>
+          <div class="form-group"><label>Notas (opcional)</label>
+            <input type="text" id="gasto-notas"></div>
           <button type="submit" id="btn-gasto" class="btn btn-danger">Registrar gasto</button>
         </form>
       </div>
     </div>
 
-    <!-- VISTA: INGRESO -->
+    <!-- INGRESO -->
     <div id="vista-ingreso" class="vista" style="display:none">
       <div class="sec-header"><h2>Registrar ingreso</h2></div>
       <div class="card">
         <form id="form-ingreso">
+          <div class="form-group"><label>Fecha</label>
+            <input type="text" id="ing-fecha" placeholder="DD/MM/AAAA" required></div>
+          <div class="form-group"><label>Tipo de ingreso</label>
+            <select id="ing-tipo" required></select></div>
+          <div class="form-group"><label>Descripción</label>
+            <input type="text" id="ing-desc" placeholder="ej. Sueldo mayo" required></div>
+          <div class="form-group"><label>Monto bruto ($)</label>
+            <input type="number" id="ing-bruto" placeholder="0"></div>
+          <div class="form-group"><label>Monto neto / líquido ($)</label>
+            <input type="number" id="ing-neto" placeholder="0" min="1" required></div>
+          <div class="form-group"><label>Notas (opcional)</label>
+            <input type="text" id="ing-notas"></div>
           <div class="form-group">
-            <label>Fecha</label>
-            <input type="text" id="ing-fecha" placeholder="DD/MM/AAAA" required>
-          </div>
-          <div class="form-group">
-            <label>Tipo de ingreso</label>
-            <select id="ing-tipo" required></select>
-          </div>
-          <div class="form-group">
-            <label>Descripción</label>
-            <input type="text" id="ing-desc" placeholder="ej. Sueldo mayo" required>
-          </div>
-          <div class="form-group">
-            <label>Monto bruto ($)</label>
-            <input type="number" id="ing-bruto" placeholder="0" min="1">
-          </div>
-          <div class="form-group">
-            <label>Monto neto / líquido ($)</label>
-            <input type="number" id="ing-neto" placeholder="0" min="1" required>
-          </div>
-          <div class="form-group">
-            <label>Notas (opcional)</label>
-            <input type="text" id="ing-notas" placeholder="">
-          </div>
-
-          <!-- Preview distribución -->
-          <div style="margin-bottom:14px;">
-            <div style="font-size:13px;font-weight:600;color:var(--text-muted);margin-bottom:6px;">Vista previa distribución</div>
-            <div class="dist-preview" id="dist-preview">
-              <p style="font-size:13px;color:var(--text-muted)">Ingresa el monto neto para ver la distribución</p>
+            <div style="font-size:12px;color:var(--text3);margin-bottom:8px;font-weight:500;letter-spacing:.2px;text-transform:uppercase">Vista previa distribución</div>
+            <div id="dist-preview" class="dist-preview">
+              <p style="font-size:13px;color:var(--text3)">Ingresa el monto neto para ver la distribución</p>
             </div>
           </div>
-
           <button type="submit" id="btn-ingreso" class="btn btn-success">Registrar ingreso</button>
         </form>
       </div>
     </div>
 
-    <!-- VISTA: DEUDA -->
+    <!-- DEUDA -->
     <div id="vista-deuda" class="vista" style="display:none">
       <div class="sec-header"><h2>Plan de deuda</h2></div>
       <div class="card">
-        <div class="form-group">
-          <label>¿Cuánto puedes destinar a pagar TCs por mes? ($)</label>
+        <div class="card-title">Estrategia de ataque</div>
+        <div class="sim-estrategia" id="sim-estrategias"></div>
+        <div class="form-group" style="margin-bottom:0">
+          <label>Aporte mensual total a deudas ($)</label>
           <input type="number" id="aporte-mensual" value="150000" min="1">
         </div>
-        <div style="font-size:12px;color:var(--text-muted);margin-bottom:12px;">
-          Método: Bola de nieve (menor saldo primero → eliminas cuentas más rápido)
-        </div>
-        <div id="lista-deuda"></div>
       </div>
+      <div id="lista-deuda"></div>
     </div>
 
-    <!-- VISTA: AJUSTES -->
+    <!-- AJUSTES -->
     <div id="vista-ajustes" class="vista" style="display:none">
-      <div class="sec-header"><h2>⚙️ Ajustes</h2></div>
-      <div class="ajuste-tabs">
-        <button class="ajuste-tab active" onclick="switchAjuste('tcs',this)">Tarjetas</button>
-        <button class="ajuste-tab" onclick="switchAjuste('debitos',this)">Débitos</button>
-        <button class="ajuste-tab" onclick="switchAjuste('fondos',this)">Fondos</button>
-        <button class="ajuste-tab" onclick="switchAjuste('reglas',this)">Reglas</button>
+      <div class="sec-header"><h2>Ajustes</h2></div>
+
+      <!-- HOME panel -->
+      <div class="ajuste-panel active" id="ajuste-panel-home">
+        <div class="ajuste-home">
+          <div class="ajuste-home-btn" onclick="mostrarPanelAjuste('tcs')">
+            <div class="ico">💳</div>
+            <span class="lbl">Tarjetas</span>
+            <span class="sub">TCs y créditos</span>
+          </div>
+          <div class="ajuste-home-btn" onclick="mostrarPanelAjuste('debitos')">
+            <div class="ico">🏦</div>
+            <span class="lbl">Débitos</span>
+            <span class="sub">Cuentas bancarias</span>
+          </div>
+          <div class="ajuste-home-btn" onclick="mostrarPanelAjuste('fondos')">
+            <div class="ico">📦</div>
+            <span class="lbl">Fondos</span>
+            <span class="sub">Cajas de gasto</span>
+          </div>
+          <div class="ajuste-home-btn" onclick="mostrarPanelAjuste('reglas')">
+            <div class="ico">⚖️</div>
+            <span class="lbl">Reglas</span>
+            <span class="sub">Distribución ingresos</span>
+          </div>
+          <div class="ajuste-home-btn" onclick="mostrarPanelAjuste('pagos')">
+            <div class="ico">🔄</div>
+            <span class="lbl">Pagos automáticos</span>
+            <span class="sub">Gastos recurrentes</span>
+          </div>
+          <div class="ajuste-home-btn" onclick="mostrarPanelAjuste('info')">
+            <div class="ico">ℹ️</div>
+            <span class="lbl">Acerca de</span>
+            <span class="sub">Info de la app</span>
+          </div>
+        </div>
       </div>
-      <div class="card ajuste-panel active" id="panel-tcs"><div class="card-title">Tarjetas de crédito</div><div id="ajuste-tcs"></div></div>
-      <div class="card ajuste-panel" id="panel-debitos"><div class="card-title">Cuentas débito</div><div id="ajuste-debitos"></div></div>
-      <div class="card ajuste-panel" id="panel-fondos"><div class="card-title">Fondos / Cajas</div><div id="ajuste-fondos"></div></div>
-      <div class="card ajuste-panel" id="panel-reglas"><div class="card-title">Reglas de distribución</div><div id="ajuste-reglas"></div></div>
-    </div>
+
+      <!-- TCs panel -->
+      <div class="ajuste-panel" id="ajuste-panel-tcs">
+        <button class="btn-back" onclick="mostrarPanelAjuste('home')">← Volver</button>
+        <div class="sec-header">
+          <h2>💳 Tarjetas</h2>
+          <button class="btn btn-primary btn-sm" onclick="agregarTCForm()">+ Agregar TC</button>
+        </div>
+        <div id="lista-ajuste-tcs"></div>
+      </div>
+
+      <!-- Débitos panel -->
+      <div class="ajuste-panel" id="ajuste-panel-debitos">
+        <button class="btn-back" onclick="mostrarPanelAjuste('home')">← Volver</button>
+        <div class="sec-header"><h2>🏦 Débitos</h2></div>
+        <div id="lista-ajuste-debitos"></div>
+      </div>
+
+      <!-- Fondos panel -->
+      <div class="ajuste-panel" id="ajuste-panel-fondos">
+        <button class="btn-back" onclick="mostrarPanelAjuste('home')">← Volver</button>
+        <div class="sec-header">
+          <h2>📦 Fondos</h2>
+        </div>
+        <div class="card"><div id="lista-ajuste-fondos"></div></div>
+      </div>
+
+      <!-- Reglas panel -->
+      <div class="ajuste-panel" id="ajuste-panel-reglas">
+        <button class="btn-back" onclick="mostrarPanelAjuste('home')">← Volver</button>
+        <div class="sec-header"><h2>⚖️ Reglas de distribución</h2></div>
+        <div class="card"><div id="lista-ajuste-reglas"></div></div>
+      </div>
+
+      <!-- Pagos automáticos panel -->
+      <div class="ajuste-panel" id="ajuste-panel-pagos">
+        <button class="btn-back" onclick="mostrarPanelAjuste('home')">← Volver</button>
+        <div class="sec-header">
+          <h2>🔄 Pagos automáticos</h2>
+          <button class="btn btn-primary btn-sm" onclick="mostrarFormPagoAuto()">+ Agregar</button>
+        </div>
+        <div id="lista-pagos-auto"></div>
+        <div id="form-pago-auto" style="display:none" class="card" style="margin-top:12px">
+          <div class="card-title">Nuevo pago automático</div>
+          <div class="campo-grid">
+            <div class="campo-field full"><label>Nombre / Descripción</label>
+              <input type="text" id="pa-nombre" placeholder="ej. Netflix, Arriendo"></div>
+            <div class="campo-field"><label>Monto ($)</label>
+              <input type="number" id="pa-monto" placeholder="0"></div>
+            <div class="campo-field"><label>Día del mes</label>
+              <input type="number" id="pa-dia" min="1" max="31" value="1"></div>
+            <div class="campo-field"><label>Se paga desde</label>
+              <select id="pa-cuenta"></select></div>
+            <div class="campo-field"><label>Fondo a descontar</label>
+              <select id="pa-fondo"></select></div>
+          </div>
+          <button class="btn btn-primary btn-sm" onclick="guardarPagoAuto()" style="margin-top:8px">Guardar</button>
+        </div>
+      </div>
+
+      <!-- Info panel -->
+      <div class="ajuste-panel" id="ajuste-panel-info">
+        <button class="btn-back" onclick="mostrarPanelAjuste('home')">← Volver</button>
+        <div class="sec-header"><h2>ℹ️ Acerca de</h2></div>
+        <div class="card"><div id="ajuste-info-content"></div></div>
+        <div style="margin-top:16px">
+          <button class="btn btn-danger" onclick="cerrarSesion()">Cerrar sesión</button>
+        </div>
+      </div>
+
+    </div><!-- fin ajustes -->
 
   </div><!-- fin contenido -->
 
@@ -253,12 +317,14 @@
       <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>
       Deuda
     </button>
-    <button class="nav-item" data-vista="ajustes"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>Ajustes</button>
+    <button class="nav-item" data-vista="ajustes">
+      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+      Ajustes
+    </button>
   </nav>
 
-</div><!-- fin appShell -->
+</div>
 
-<!-- SCRIPTS -->
 <script src="https://alcdn.msauth.net/browser/2.38.0/js/msal-browser.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <script src="js/config.js"></script>
