@@ -1,7 +1,6 @@
-// ══ ESTADO GLOBAL ══════════════════════════════════════════════════════════
 let vistaActual = "dashboard";
 
-// ══ UI UTILIDADES ══════════════════════════════════════════════════════════
+// ══ UI ══════════════════════════════════════════════════════════════════
 function mostrarError(msg) {
   const t = document.getElementById("toast");
   t.textContent = "✕ " + msg;
@@ -20,7 +19,7 @@ function loading(show) {
 function mostrarVista(id) {
   document.querySelectorAll(".vista").forEach(v=>v.style.display="none");
   const v = document.getElementById("vista-"+id);
-  if (v) v.style.display="block";
+  if (v) v.style.display = "block";
   vistaActual = id;
   document.querySelectorAll(".nav-item").forEach(n=>n.classList.remove("active"));
   const btn = document.querySelector(`[data-vista="${id}"]`);
@@ -28,61 +27,100 @@ function mostrarVista(id) {
   window.scrollTo(0,0);
 }
 
-// ══ DASHBOARD ══════════════════════════════════════════════════════════════
+// ══ DASHBOARD ══════════════════════════════════════════════════════════
 function renderDashboard() {
   document.getElementById("dash-deuda").textContent      = formatCLP(totalDeuda());
   document.getElementById("dash-caja").textContent       = formatCLP(totalCaja());
   document.getElementById("dash-mantencion").textContent = formatCLP(totalMantencion());
   document.getElementById("dash-disponible").textContent = formatCLP(totalDisponibleTC());
-
   renderAlertasDashboard();
   setTimeout(()=>renderChartGastosPorFondo("chart-gastos"), 150);
 }
 
 function renderAlertasDashboard() {
-  const el = document.getElementById("dash-alertas");
-  const hoy = new Date();
+  const el   = document.getElementById("dash-alertas");
+  const hoy  = new Date();
   const alertas = [];
 
   tcsData.filter(tc=>tc["Activa"]==="SI").forEach(tc => {
     const pct    = pctUsoTC(tc);
     const estado = estadoTC(pct);
-    const venc   = estadoVencimiento(tc);
 
-    if (pct >= 40) {
+    // Solo mostrar TCs con 40%+ de uso
+    if (pct >= 80) {
       alertas.push(`
         <div class="alerta-item">
           <span>${tc["Nombre"]}</span>
-          <div style="display:flex;gap:6px;align-items:center">
-            <span style="font-size:13px;color:var(--text2)">${pct}%</span>
-            <span class="alerta-badge tc-badge ${estado.cls}">${estado.icon} ${estado.label}</span>
-          </div>
+          <span class="tc-badge urgente">${estado.icon} ${pct}% usado</span>
         </div>`);
-    }
-    if (venc) {
+    } else if (pct >= 40) {
       alertas.push(`
         <div class="alerta-item">
-          <span>${tc["Nombre"]} — pago</span>
-          <span class="venc-badge ${venc.cls}">${venc.label}</span>
+          <span>${tc["Nombre"]}</span>
+          <span class="tc-badge alerta">${estado.icon} ${pct}% usado</span>
+        </div>`);
+    }
+
+    // Alertas de vencimiento — solo 3 rangos
+    const diaVenc  = parseInt(tc["F. Vencimiento"]) || 0;
+    const diaCorte = parseInt(tc["F. Corte"]) || 0;
+    if (!diaVenc) return;
+
+    const diasVenc  = diasParaFecha(diaVenc);
+    const diasCorte = diasParaFecha(diaCorte);
+
+    // Verde: 3 días antes del corte
+    if (diasCorte >= 0 && diasCorte <= 3) {
+      alertas.push(`
+        <div class="alerta-item">
+          <span>${tc["Nombre"]} — corte</span>
+          <span class="venc-badge venc-ok">En ${diasCorte}d</span>
+        </div>`);
+    }
+    // Amarillo: entre corte y vencimiento (período de pago)
+    else if (diasCorte < 0 && diasVenc > 3) {
+      alertas.push(`
+        <div class="alerta-item">
+          <span>${tc["Nombre"]} — en período de pago</span>
+          <span class="venc-badge venc-pronto">Vence en ${diasVenc}d</span>
+        </div>`);
+    }
+    // Rojo: 3 días o menos para vencer
+    else if (diasVenc >= 0 && diasVenc <= 3) {
+      alertas.push(`
+        <div class="alerta-item">
+          <span>${tc["Nombre"]} — ¡pagar!</span>
+          <span class="venc-badge venc-hoy">${diasVenc === 0 ? "HOY" : `${diasVenc}d`}</span>
+        </div>`);
+    }
+    // Vencida
+    else if (diasVenc < 0) {
+      alertas.push(`
+        <div class="alerta-item">
+          <span>${tc["Nombre"]}</span>
+          <span class="venc-badge venc-mora">Vencida ${Math.abs(diasVenc)}d</span>
         </div>`);
     }
   });
 
-  if (alertas.length === 0) {
-    el.innerHTML = `<div style="color:var(--green);font-size:14px;padding:4px 0">✓ Todo bajo control</div>`;
-  } else {
-    el.innerHTML = alertas.join("");
-  }
+  el.innerHTML = alertas.length === 0
+    ? `<div style="color:var(--green);font-size:14px;padding:4px 0">✓ Todo bajo control</div>`
+    : alertas.join("");
 }
 
-// ══ TCs ════════════════════════════════════════════════════════════════════
+// ══ TCs ════════════════════════════════════════════════════════════════
 function renderTCs() {
+  document.getElementById("tc-total-deuda").textContent = formatCLP(totalDeuda());
+  document.getElementById("tc-total-mant").textContent  = formatCLP(totalMantencion());
+
   const el = document.getElementById("lista-tcs");
   el.innerHTML = tcsData.filter(tc=>tc["Activa"]==="SI").map(tc => {
-    const pct    = pctUsoTC(tc);
+    const cupo   = parseInt(tc["Cupo"])  || 0;
+    const usado  = parseInt(tc["Usado"]) || 0;
+    const libre  = Math.max(0, cupo - usado);
+    const pct    = cupo > 0 ? Math.round((usado/cupo)*100) : 0;
     const estado = estadoTC(pct);
     const venc   = estadoVencimiento(tc);
-    const libre  = (parseInt(tc["Cupo"])||0) - (parseInt(tc["Usado"])||0);
     return `
     <div class="tc-card">
       <div class="tc-header">
@@ -90,9 +128,9 @@ function renderTCs() {
         <span class="tc-badge ${estado.cls}">${estado.icon} ${estado.label}</span>
       </div>
       <div class="tc-nums">
-        <span>Usado: <strong style="color:${estado.color}">${formatCLP(tc["Usado"]||0)}</strong></span>
-        <span>Libre: <strong>${formatCLP(libre)}</strong></span>
-        <span>Cupo: <strong>${formatCLP(tc["Cupo"]||0)}</strong></span>
+        <span>Usado: <strong style="color:${estado.color}">${formatCLP(usado)}</strong></span>
+        <span>Libre: <strong style="color:var(--green)">${formatCLP(libre)}</strong></span>
+        <span>Cupo: <strong>${formatCLP(cupo)}</strong></span>
       </div>
       <div class="prog-bg">
         <div class="prog-fill" style="width:${pct}%;background:${estado.color}"></div>
@@ -104,44 +142,43 @@ function renderTCs() {
       </div>
     </div>`;
   }).join("");
-
-  // Resumen total
-  const totalMant = totalMantencion();
-  document.getElementById("tc-total-deuda").textContent = formatCLP(totalDeuda());
-  document.getElementById("tc-total-mant").textContent  = formatCLP(totalMant);
-
   setTimeout(()=>renderChartDeuda("chart-deuda"), 150);
 }
 
-// ══ FONDOS ═════════════════════════════════════════════════════════════════
+// ══ FONDOS ═════════════════════════════════════════════════════════════
 function renderFondos() {
   const el = document.getElementById("lista-fondos");
   el.innerHTML = fondosData.map(f => {
-    const presup  = parseInt(f["Presupuesto Mensual"])||0;
-    const saldo   = parseInt(f["Saldo Actual"])||0;
+    const presup  = parseInt(f["Presupuesto Mensual"]) || 0;
+    const saldo   = parseInt(f["Saldo Actual"]) || 0;
     const gastado = Math.max(0, presup - saldo);
+    const sobre   = Math.max(0, -saldo);
     const pct     = presup > 0 ? Math.min(100, Math.round((gastado/presup)*100)) : 0;
-    const color   = colorFondo(pct);
+    const esIntocable = reglasRequisa.intocables.includes(f["Fondo"]);
     return `
     <div class="fondo-row">
       <div class="fondo-top">
-        <span class="fondo-nombre">${semaforo(pct)} ${f["Fondo"]}</span>
-        <span class="fondo-montos">${formatCLP(saldo)} libre</span>
+        <span class="fondo-nombre">${semaforo(pct)} ${f["Fondo"]}${esIntocable ? ' <span style="font-size:10px;color:var(--text3)">🔒</span>' : ''}</span>
+        <span class="fondo-montos">${formatCLP(Math.max(0,saldo))} libre</span>
       </div>
       <div class="prog-bg">
-        <div class="prog-fill" style="width:${pct}%;background:${color}"></div>
+        <div class="prog-fill" style="width:${pct}%;background:${colorFondo(pct)}"></div>
       </div>
       <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text3);margin-top:4px">
-        <span>Gastado: ${formatCLP(gastado)}</span>
+        <span>Gastado: <span style="color:var(--green)">${formatCLP(gastado)}</span>${sobre>0?` + <span style="color:var(--red)">Sobre: ${formatCLP(sobre)}</span>`:""}</span>
         <span>Presupuesto: ${formatCLP(presup)}</span>
       </div>
     </div>`;
   }).join("");
 
+  // Altura dinámica según cantidad de fondos
+  const altura = Math.max(280, fondosData.length * 42);
+  const wrap = document.getElementById("chart-fondos-wrap");
+  if (wrap) wrap.style.height = altura + "px";
   setTimeout(()=>renderChartFondos("chart-fondos"), 150);
 }
 
-// ══ FORMULARIO GASTO ═══════════════════════════════════════════════════════
+// ══ FORM GASTO ══════════════════════════════════════════════════════════
 function renderFormGasto() {
   const selFondo = document.getElementById("gasto-fondo");
   selFondo.innerHTML = fondosData.map(f=>`<option>${f["Fondo"]}</option>`).join("");
@@ -164,34 +201,46 @@ function actualizarSelectCuentas() {
   }
 }
 
-// ══ FORMULARIO INGRESO ════════════════════════════════════════════════════
+// ══ FORM INGRESO ════════════════════════════════════════════════════════
 function renderFormIngreso() {
   document.getElementById("ing-fecha").value = hoyFormato();
   const selTipo = document.getElementById("ing-tipo");
   selTipo.innerHTML = TIPOS_INGRESO.map(t=>`<option>${t}</option>`).join("");
-  selTipo.onchange = previsualizarDistribucion;
+  previsualizarDistribucion();
 }
 
 function previsualizarDistribucion() {
-  const monto = parseInt(document.getElementById("ing-neto").value)||0;
-  const tipo  = document.getElementById("ing-tipo").value;
-  if (!monto) { document.getElementById("dist-preview").innerHTML=""; return; }
-  const dist = calcularDistribucion(tipo, monto);
-  const el   = document.getElementById("dist-preview");
-  if (!dist.length) {
-    el.innerHTML = `<p style="font-size:13px;color:var(--text3);padding:8px 0">Sin reglas para este tipo — configura en Ajustes → Reglas</p>`;
+  const monto = parseInt(document.getElementById("ing-neto")?.value) || 0;
+  const tipo  = document.getElementById("ing-tipo")?.value;
+  const el    = document.getElementById("dist-preview");
+  if (!el) return;
+  if (!monto) {
+    el.innerHTML = `<p style="font-size:13px;color:var(--text3)">Ingresa el monto para ver la distribución</p>`;
     return;
   }
-  const total = dist.reduce((s,d)=>s+d.monto,0);
-  const resto = monto - total;
+  const dist = calcularDistribucion(tipo, monto);
+  if (!dist.length) {
+    el.innerHTML = `<p style="font-size:13px;color:var(--text3)">Sin reglas configuradas — ve a Ajustes → Reglas</p>`;
+    return;
+  }
+  const total  = dist.reduce((s,d)=>s+d.monto,0);
+  const resto  = monto - total;
   el.innerHTML = dist.map(d=>
-    `<div class="dist-row"><span class="fn">${d.fondo}</span><span class="fm">${formatCLP(d.monto)}</span></div>`
-  ).join("") + (resto > 0 ? `<div class="dist-row"><span class="fn" style="color:var(--yellow)">Sin asignar</span><span class="fm" style="color:var(--yellow)">${formatCLP(resto)}</span></div>` : "");
+    `<div class="dist-row">
+      <span class="fn">${d.fondo}</span>
+      <span style="font-size:12px;color:var(--text3)">${d.valor}${d.tipo}</span>
+      <span class="fm">${formatCLP(d.monto)}</span>
+    </div>`
+  ).join("") +
+  (resto > 0 ? `<div class="dist-row"><span class="fn" style="color:var(--yellow)">Sin asignar</span><span></span><span class="fm" style="color:var(--yellow)">${formatCLP(resto)}</span></div>` : "") +
+  `<div style="display:flex;justify-content:space-between;font-size:12px;padding-top:8px;border-top:1px solid var(--border);margin-top:4px">
+    <span style="color:var(--text3)">Total distribuido</span>
+    <span style="color:var(--green);font-weight:700">${formatCLP(total)}</span>
+  </div>`;
 }
 
-// ══ DEUDA SIMULADOR ════════════════════════════════════════════════════════
+// ══ DEUDA SIMULADOR ═════════════════════════════════════════════════════
 function renderDeuda() {
-  // Render botones estrategia
   const elEst = document.getElementById("sim-estrategias");
   if (elEst) {
     elEst.innerHTML = ESTRATEGIAS.map(e=>`
@@ -202,45 +251,48 @@ function renderDeuda() {
       </div>`).join("");
   }
 
-  const aporte = parseInt(document.getElementById("aporte-mensual")?.value)||150000;
-  if (estrategiaActual === "manual") {
-    renderDeudaManual();
-    return;
-  }
+  if (estrategiaActual === "manual") { renderDeudaManual(); return; }
 
-  const proyeccion = proyectarDeuda(aporte, estrategiaActual);
-  const el = document.getElementById("lista-deuda");
+  const aporte = parseInt(document.getElementById("aporte-mensual")?.value) || 150000;
+  const plan   = calcularPlanMensual(aporte, estrategiaActual);
+  const el     = document.getElementById("lista-deuda");
 
-  if (!proyeccion.length) {
+  if (!plan.length) {
     el.innerHTML = `<div style="color:var(--green);font-size:15px;text-align:center;padding:20px">🎉 Sin deuda activa</div>`;
     return;
   }
 
-  const totalInteres = proyeccion.reduce((s,p)=>s+p.interesTotal,0);
+  const totalPagar = plan.reduce((s,p)=>s+p.pagoTotal,0);
   el.innerHTML = `
-    <div style="font-size:12px;color:var(--text3);margin-bottom:12px;padding:8px 12px;background:var(--bg3);border-radius:var(--radius-xs)">
-      Orden de ataque según estrategia <strong style="color:var(--accent)">${ESTRATEGIAS.find(e=>e.id===estrategiaActual)?.nombre}</strong>
-      · Interés total estimado: <strong style="color:var(--yellow)">${formatCLP(totalInteres)}</strong>
+    <div style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px 14px;margin-bottom:12px">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <span style="font-size:13px;color:var(--text2)">Total a pagar este mes</span>
+        <span style="font-size:20px;font-weight:700;color:var(--accent)">${formatCLP(totalPagar)}</span>
+      </div>
+      <div style="font-size:12px;color:var(--text3);margin-top:4px">
+        Estrategia: <strong style="color:var(--accent)">${ESTRATEGIAS.find(e=>e.id===estrategiaActual)?.nombre}</strong>
+      </div>
     </div>
-    ${proyeccion.map(p=>`
+    ${plan.map(p=>`
     <div class="deuda-item">
       <div class="di-header">
         <div>
-          <div class="di-nombre">${p.orden}° ${p.nombre}</div>
-          <div style="font-size:12px;color:var(--text3)">Tasa ${((p.tasa||0)*100).toFixed ? ((p.tasa||0)*100).toFixed(2) : p.tasa}% mensual</div>
+          <div class="di-nombre">${p.nombre}</div>
+          <div style="font-size:12px;color:var(--text3)">Saldo: ${formatCLP(p.saldo)}</div>
         </div>
-        <div class="di-monto">${formatCLP(p.saldo)}</div>
+        <div style="text-align:right">
+          <div style="font-size:22px;font-weight:700;color:var(--accent)">${formatCLP(p.pagoTotal)}</div>
+          <div style="font-size:11px;color:var(--text3)">pagar este mes</div>
+        </div>
       </div>
       <div class="di-detail">
-        Aporte mensual: <strong>${formatCLP(p.aporte)}</strong> · 
-        Pago mínimo: <strong>${formatCLP(p.pagoMin)}</strong>
+        Mínimo: <strong>${formatCLP(p.pagoMin)}</strong>
+        ${p.pagoExtra > 0 ? ` + Extra: <strong style="color:var(--green)">${formatCLP(p.pagoExtra)}</strong>` : ""}
       </div>
       <div class="di-result">
         ${p.meses
-          ? `<span class="meses">${p.meses} meses</span> <span class="fecha">— ${mesesAFecha(p.meses)}</span><br>
-             <span style="font-size:12px;color:var(--text3)">Interés estimado: ${formatCLP(p.interesTotal)}</span>`
-          : `<span style="color:var(--red)">⚠ Aporte insuficiente para cubrir intereses</span>`
-        }
+          ? `<span class="meses">${p.meses} meses</span> <span class="fecha">→ ${p.fechaLiquida}</span>`
+          : `<span style="color:var(--red)">⚠ Aporte cubre solo intereses</span>`}
       </div>
     </div>`).join("")}`;
 }
@@ -253,48 +305,41 @@ function setEstrategia(id) {
 function renderDeudaManual() {
   const el = document.getElementById("lista-deuda");
   el.innerHTML = `
-    <div style="font-size:13px;color:var(--text2);margin-bottom:12px">Define cuánto abonar a cada tarjeta este mes:</div>
+    <div style="font-size:13px;color:var(--text2);margin-bottom:14px">Define cuánto abonar a cada TC este mes:</div>
     ${tcsData.filter(tc=>tc["Activa"]==="SI"&&(parseInt(tc["Usado"])||0)>0).map(tc=>`
-    <div class="deuda-item" style="margin-bottom:8px">
-      <div class="di-header" style="margin-bottom:8px">
+    <div class="deuda-item">
+      <div class="di-header">
         <div class="di-nombre">${tc["Nombre"]}</div>
         <div class="di-monto">${formatCLP(tc["Usado"]||0)}</div>
       </div>
-      <div class="campo-field">
-        <label>Abono este mes</label>
+      <div class="campo-field" style="margin-top:8px">
+        <label style="font-size:11px;color:var(--text3);text-transform:uppercase">Abono este mes (mín: ${formatCLP(Math.max(10000,Math.round((parseInt(tc["Usado"])||0)*0.03)))})</label>
         <input type="number" placeholder="0" id="manual-${tc["Nombre"].replace(/ /g,'_')}"
-          style="width:100%;padding:9px;background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-xs);color:var(--text);font-size:14px">
+          style="width:100%;padding:9px;background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-xs);color:var(--text);font-size:14px;margin-top:4px">
       </div>
-    </div>`).join("")}
-    <button class="btn btn-primary" onclick="calcularManual()" style="margin-top:8px">Calcular proyección manual</button>`;
+    </div>`).join("")}`;
 }
 
-function calcularManual() {
-  mostrarExito("Proyección manual calculada — revisa cada TC");
-}
-
-// ══ INICIALIZACIÓN ═════════════════════════════════════════════════════════
+// ══ INIT ════════════════════════════════════════════════════════════════
 async function init() {
   loading(true);
   await msalInstance.handleRedirectPromise();
   const accounts = msalInstance.getAllAccounts();
-
   if (accounts.length === 0) {
     loading(false);
     document.getElementById("loginScreen").style.display = "flex";
     document.getElementById("appShell").style.display    = "none";
     return;
   }
-
   currentAccount = accounts[0];
-  document.getElementById("loginScreen").style.display  = "none";
-  document.getElementById("appShell").style.display     = "block";
-  document.getElementById("topbar-user").textContent    = obtenerUsuario();
+  document.getElementById("loginScreen").style.display = "none";
+  document.getElementById("appShell").style.display    = "block";
+  document.getElementById("topbar-user").textContent   = obtenerUsuario();
 
   try {
     await Promise.all([cargarTCs(), cargarDebitos(), cargarFondos(), cargarReglas(), cargarMetas()]);
   } catch(e) {
-    mostrarError("Error al cargar datos de Excel.");
+    mostrarError("Error al cargar datos.");
     console.error(e);
   }
 
@@ -306,11 +351,10 @@ async function init() {
   mostrarVista("dashboard");
 }
 
-// ══ EVENT LISTENERS ════════════════════════════════════════════════════════
+// ══ LISTENERS ══════════════════════════════════════════════════════════
 document.addEventListener("DOMContentLoaded", () => {
   init();
 
-  // Nav
   document.querySelectorAll(".nav-item").forEach(btn => {
     btn.addEventListener("click", () => {
       const vista = btn.dataset.vista;
@@ -323,11 +367,11 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   // Form gasto
-  document.getElementById("form-gasto").addEventListener("submit", async e => {
+  document.getElementById("form-gasto").addEventListener("submit", e => {
     e.preventDefault();
     const btn = document.getElementById("btn-gasto");
-    btn.disabled=true; btn.textContent="Guardando...";
-    const ok = await registrarGasto(
+    btn.disabled = true; btn.textContent = "Procesando...";
+    const ok = iniciarRegistroGasto(
       document.getElementById("gasto-fecha").value,
       document.getElementById("gasto-fondo").value,
       document.getElementById("gasto-desc").value,
@@ -337,28 +381,27 @@ document.addEventListener("DOMContentLoaded", () => {
       document.getElementById("gasto-cuotas").value,
       document.getElementById("gasto-notas").value
     );
-    btn.disabled=false; btn.textContent="Registrar gasto";
-    if (ok) { e.target.reset(); renderFormGasto(); await cargarFondos(); await cargarTCs(); await cargarDebitos(); }
+    btn.disabled = false; btn.textContent = "Registrar gasto";
+    if (ok) { e.target.reset(); renderFormGasto(); renderDashboard(); }
   });
 
   // Form ingreso
   document.getElementById("form-ingreso").addEventListener("submit", async e => {
     e.preventDefault();
     const btn = document.getElementById("btn-ingreso");
-    btn.disabled=true; btn.textContent="Guardando...";
+    btn.disabled = true; btn.textContent = "Guardando...";
     const ok = await registrarIngreso(
       document.getElementById("ing-fecha").value,
       document.getElementById("ing-tipo").value,
       document.getElementById("ing-desc").value,
-      document.getElementById("ing-bruto").value,
       document.getElementById("ing-neto").value,
       document.getElementById("ing-notas").value
     );
-    btn.disabled=false; btn.textContent="Registrar ingreso";
-    if (ok) { e.target.reset(); renderFormIngreso(); await cargarFondos(); document.getElementById("dist-preview").innerHTML=""; }
+    btn.disabled = false; btn.textContent = "Registrar ingreso";
+    if (ok) { e.target.reset(); renderFormIngreso(); renderDashboard(); }
   });
 
-  document.getElementById("ing-neto").addEventListener("input", previsualizarDistribucion);
+  document.getElementById("ing-neto")?.addEventListener("input", previsualizarDistribucion);
   document.getElementById("ing-tipo")?.addEventListener("change", previsualizarDistribucion);
   document.getElementById("aporte-mensual")?.addEventListener("input", renderDeuda);
 });
