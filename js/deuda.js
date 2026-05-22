@@ -1,91 +1,59 @@
-let metasData    = [];
-let estrategiaActual = "nieve";
-
-async function cargarMetas() {
-  metasData = await leerHoja(CONFIG.sheets.metas) || [];
-  return metasData;
-}
-
 const ESTRATEGIAS = [
-  { id:"nieve",      ico:"⛄", nombre:"Bola de nieve",  desc:"Liquida la menor primero" },
-  { id:"avalancha",  ico:"🏔️", nombre:"Avalancha",      desc:"Ataca la mayor tasa primero" },
-  { id:"mantencion", ico:"💸", nombre:"Mantención",     desc:"Elimina costos fijos antes" },
-  { id:"manual",     ico:"✏️", nombre:"Manual",         desc:"Tú decides cuánto a cada una" }
+  { id:"nieve",     ico:"⛄", nombre:"Bola de nieve",  desc:"Menor saldo primero — liquidás cuentas rápido" },
+  { id:"avalancha", ico:"🏔️", nombre:"Avalancha",      desc:"Mayor tasa primero — pagás menos interés" },
+  { id:"mantencion",ico:"💸", nombre:"Mantención",     desc:"Mayor mantención primero — eliminás costos fijos" },
+  { id:"manual",    ico:"✏️", nombre:"Manual",         desc:"Vos decidís cuánto a cada una" }
 ];
 
-// Retorna cuánto pagar en cada TC este mes dado un aporte total
-function calcularPlanMensual(aporteMensual, estrategia) {
-  if (!aporteMensual || aporteMensual <= 0) return [];
+let estrategiaActual = "nieve";
 
-  const tcsActivas = tcsData
-    .filter(tc => tc["Activa"] === "SI" && (parseInt(tc["Usado"]) || 0) > 0)
+// Calcula el plan de pago del mes actual
+// minimos: Set de nombres de TCs que pagan mínimo obligatorio
+function calcularPlanMensual(aporteMensual, estrategia, minimosSeleccionados) {
+  const tcsActivas = STATE.tcs.filter(tc => tc.activa && (tc.usado || 0) > 0)
     .map(tc => ({
-      nombre:  tc["Nombre"],
-      saldo:   parseInt(tc["Usado"])    || 0,
-      tasa:    parseFloat(tc["Tasa %"]) || 0,
-      mant:    parseInt(tc["Mantención"]) || 0,
-      // Pago mínimo: 3% del saldo o $10.000
-      pagoMin: Math.max(10000, Math.round((parseInt(tc["Usado"]) || 0) * 0.03))
+      ...tc,
+      pagoMin: Math.max(10000, Math.round((tc.usado || 0) * 0.03))
     }));
 
-  if (tcsActivas.length === 0) return [];
+  if (!tcsActivas.length) return [];
 
-  // Pago mínimo total
-  const minTotal = tcsActivas.reduce((s, tc) => s + tc.pagoMin, 0);
-  const excedente = Math.max(0, aporteMensual - minTotal);
+  // Calcular total de mínimos seleccionados
+  const conMinimo   = tcsActivas.filter(tc => minimosSeleccionados.has(tc.nombre));
+  const sinMinimo   = tcsActivas.filter(tc => !minimosSeleccionados.has(tc.nombre));
+  const totalMins   = conMinimo.reduce((s,tc) => s + tc.pagoMin, 0);
+  const restante    = Math.max(0, aporteMensual - totalMins);
 
-  // Ordenar según estrategia para aplicar excedente
-  const ordenadas = [...tcsActivas];
-  if (estrategia === "nieve")      ordenadas.sort((a,b) => a.saldo - b.saldo);
-  else if (estrategia === "avalancha")  ordenadas.sort((a,b) => b.tasa  - a.tasa);
-  else if (estrategia === "mantencion") ordenadas.sort((a,b) => b.mant  - a.mant);
+  // Ordenar los sin mínimo según estrategia para aplicar el excedente
+  const candidatas  = [...conMinimo, ...sinMinimo];
+  if (estrategia === "nieve")      candidatas.sort((a,b) => a.usado - b.usado);
+  else if (estrategia === "avalancha")  candidatas.sort((a,b) => (b.tasa||0) - (a.tasa||0));
+  else if (estrategia === "mantencion") candidatas.sort((a,b) => (b.mantencion||0) - (a.mantencion||0));
 
-  // Asignar pagos: mínimo a todos + excedente a la primera en orden
+  // Asignar pagos
   const plan = tcsActivas.map(tc => ({
-    nombre:  tc.nombre,
-    saldo:   tc.saldo,
-    tasa:    tc.tasa,
-    pagoMin: tc.pagoMin,
+    nombre:    tc.nombre,
+    saldo:     tc.usado || 0,
+    tasa:      tc.tasa || 0,
+    pagoMin:   tc.pagoMin,
     pagoExtra: 0,
-    pagoTotal: tc.pagoMin
+    pagoTotal: minimosSeleccionados.has(tc.nombre) ? tc.pagoMin : 0
   }));
 
-  // Aplicar excedente a la TC prioritaria
-  let excedenteRestante = excedente;
-  for (const tcOrden of ordenadas) {
-    if (excedenteRestante <= 0) break;
-    const item = plan.find(p => p.nombre === tcOrden.nombre);
+  // Distribuir el restante según estrategia — todo a la primera TC candidata
+  let por_asignar = restante;
+  for (const tc of candidatas) {
+    if (por_asignar <= 0) break;
+    const item   = plan.find(p => p.nombre === tc.nombre);
     if (!item) continue;
-    const extra = Math.min(excedenteRestante, item.saldo - item.pagoMin);
+    const extra  = Math.min(por_asignar, item.saldo - item.pagoTotal);
     if (extra > 0) {
-      item.pagoExtra = extra;
-      item.pagoTotal = item.pagoMin + extra;
-      excedenteRestante -= extra;
-      break; // todo el excedente a la primera TC prioritaria
+      item.pagoExtra  = extra;
+      item.pagoTotal += extra;
+      por_asignar    -= extra;
+      break; // todo el excedente a la primera en orden
     }
   }
 
-  // Calcular proyección de meses para cada TC con su pago asignado
-  return plan.map(p => {
-    const tasaMes = p.tasa / 100;
-    let saldoSim  = p.saldo;
-    let meses     = 0;
-    while (saldoSim > 0 && meses < 120) {
-      saldoSim = saldoSim * (1 + tasaMes) - p.pagoTotal;
-      if (saldoSim < 100) saldoSim = 0;
-      meses++;
-    }
-    return {
-      ...p,
-      meses:        meses >= 120 ? null : meses,
-      fechaLiquida: meses >= 120 ? null : mesesAFecha(meses)
-    };
-  });
-}
-
-function mesesAFecha(meses) {
-  if (!meses) return "—";
-  const d = new Date();
-  d.setMonth(d.getMonth() + meses);
-  return d.toLocaleDateString("es-CL", { month:"long", year:"numeric" });
+  return plan.filter(p => p.pagoTotal > 0);
 }

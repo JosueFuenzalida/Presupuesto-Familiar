@@ -1,104 +1,146 @@
-// ── Registrar gasto con detección de sobregasto y requisa ─────────────────
-let gastoPendienteRequisa = null;
+let _gastoPendiente = null;
 
-function iniciarRegistroGasto(fecha, fondo, descripcion, monto, medioPago, tcCuenta, cuotas, notas) {
+// Punto de entrada — detecta sobregasto y lanza modal si es necesario
+function registrarGasto(fecha, fondoId, itemId, monto, medioPago, cuenta, cuotas, notas) {
   const montoInt = parseInt(monto);
-  if (!montoInt || montoInt <= 0) { mostrarError("Monto inválido."); return false; }
+  if (!montoInt || montoInt <= 0) { mostrarError("Monto inválido."); return; }
 
-  const idx = fondosData.findIndex(f => f["Fondo"] === fondo);
-  const saldoActual = idx >= 0 ? (parseInt(fondosData[idx]["Saldo Actual"]) || 0) : 0;
-  const sobregasto  = saldoActual - montoInt < 0 ? Math.abs(saldoActual - montoInt) : 0;
+  const fondo = fondoById(fondoId);
+  if (!fondo) { mostrarError("Fondo no encontrado."); return; }
 
-  if (sobregasto > 0) {
-    // Calcular requisa y mostrar modal de confirmación
-    const requisas = calcularRequisa(fondo, sobregasto);
-    gastoPendienteRequisa = { fecha, fondo, descripcion, montoInt, medioPago, tcCuenta, cuotas, notas, sobregasto, requisas };
-    mostrarModalRequisa(fondo, sobregasto, requisas);
-    return false; // esperar confirmación
+  const item        = itemId ? (fondo.items || []).find(it => it.id === itemId) : null;
+  const saldoFondo  = fondo.saldoActual || 0;
+  const saldoItem   = item?.saldoActual || 0;
+
+  // Calcular sobregastos
+  const sobreItem   = item && item.presupuestado ? Math.max(0, montoInt - saldoItem) : 0;
+  const sobreFondo  = Math.max(0, montoInt - saldoFondo);
+
+  // Siempre alertar si hay cualquier tipo de sobregasto
+  if (sobreItem > 0 || sobreFondo > 0) {
+    const reqInterna = sobreItem  > 0 ? calcularRequisaInterna(fondo, itemId, sobreItem)  : [];
+    const reqExterna = sobreFondo > 0 ? calcularRequisaExterna(fondoId, sobreFondo) : [];
+
+    _gastoPendiente = { fecha, fondoId, itemId, montoInt, medioPago, cuenta, cuotas, notas,
+      sobreItem, sobreFondo, reqInterna, reqExterna, fondo, item };
+    mostrarModalRequisa();
+    return;
   }
 
-  // Sin sobregasto: registrar directo
-  confirmarGasto({ fecha, fondo, descripcion, montoInt, medioPago, tcCuenta, cuotas, notas, sobregasto: 0, requisas: [] });
-  return true;
+  // Sin sobregasto
+  _ejecutarGasto({ fecha, fondoId, itemId, montoInt, medioPago, cuenta, cuotas, notas,
+    sobreItem: 0, sobreFondo: 0, reqInterna: [], reqExterna: [], fondo, item });
 }
 
-function mostrarModalRequisa(fondo, sobregasto, requisas) {
-  const modal = document.getElementById("modal-requisa");
-  if (!modal) return;
+function mostrarModalRequisa() {
+  const g  = _gastoPendiente;
+  const el = document.getElementById("modal-requisa");
+  if (!el) return;
 
-  const totalCubierto = requisas.reduce((s, r) => s + r.monto, 0);
-  const sinCubrir     = sobregasto - totalCubierto;
+  let html = "";
 
-  document.getElementById("requisa-fondo").textContent    = fondo;
-  document.getElementById("requisa-monto").textContent    = formatCLP(sobregasto);
-
-  const lista = document.getElementById("requisa-lista");
-  if (requisas.length === 0) {
-    lista.innerHTML = `<div style="color:var(--red);font-size:14px">⚠ No hay fondos disponibles para cubrir el sobregasto.</div>`;
-  } else {
-    lista.innerHTML = requisas.map(r => `
-      <div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border);font-size:14px">
-        <span style="color:var(--text2)">${r.fondo}</span>
-        <span style="color:var(--yellow);font-weight:600">-${formatCLP(r.monto)}</span>
-      </div>`).join("") +
-      (sinCubrir > 0 ? `<div style="color:var(--red);font-size:13px;margin-top:8px">⚠ ${formatCLP(sinCubrir)} quedarán sin cubrir — fondo en negativo</div>` : "");
+  if (g.sobreItem > 0 && g.item) {
+    const cubierto = g.reqInterna.reduce((s,r)=>s+r.monto,0);
+    const sinCubrir = g.sobreItem - cubierto;
+    html += `
+      <div class="requisa-bloque">
+        <div class="requisa-bloque-titulo">🔀 Requisa interna — dentro de ${g.fondo.nombre}</div>
+        <div style="font-size:13px;color:var(--text2);margin-bottom:8px">
+          ${g.item.nombre} sobrepasa su presupuesto en <strong style="color:var(--red)">${formatCLP(g.sobreItem)}</strong>
+        </div>
+        ${g.reqInterna.map(r=>`
+          <div class="requisa-row">
+            <span>${r.nombre}</span>
+            <span style="color:var(--yellow)">-${formatCLP(r.monto)}</span>
+          </div>`).join("")}
+        ${g.reqInterna.length === 0 ? `<div style="color:var(--red);font-size:13px">⚠ Sin ítems requisables en este fondo</div>` : ""}
+        ${sinCubrir > 0 ? `<div style="color:var(--yellow);font-size:12px;margin-top:6px">⚠ ${formatCLP(sinCubrir)} se absorbe del saldo del fondo</div>` : ""}
+      </div>`;
   }
 
-  modal.style.display = "flex";
+  if (g.sobreFondo > 0) {
+    const cubierto  = g.reqExterna.reduce((s,r)=>s+r.monto,0);
+    const sinCubrir = g.sobreFondo - cubierto;
+    html += `
+      <div class="requisa-bloque" style="margin-top:${g.sobreItem>0?12:0}px">
+        <div class="requisa-bloque-titulo">🔀 Requisa externa — otros fondos</div>
+        <div style="font-size:13px;color:var(--text2);margin-bottom:8px">
+          ${g.fondo.nombre} no tiene suficiente saldo. Faltan <strong style="color:var(--red)">${formatCLP(g.sobreFondo)}</strong>
+        </div>
+        ${g.reqExterna.map(r=>`
+          <div class="requisa-row">
+            <span>${r.nombre}</span>
+            <span style="color:var(--yellow)">-${formatCLP(r.monto)}</span>
+          </div>`).join("")}
+        ${g.reqExterna.length === 0 ? `<div style="color:var(--red);font-size:13px">⚠ Sin fondos requisables disponibles — quedará en negativo</div>` : ""}
+        ${sinCubrir > 0 ? `<div style="color:var(--red);font-size:12px;margin-top:6px">⚠ ${formatCLP(sinCubrir)} sin cubrir — fondo en negativo</div>` : ""}
+      </div>`;
+  }
+
+  document.getElementById("requisa-contenido").innerHTML = html;
+  el.style.display = "flex";
 }
 
 function cerrarModalRequisa() {
   document.getElementById("modal-requisa").style.display = "none";
-  gastoPendienteRequisa = null;
+  _gastoPendiente = null;
 }
 
 function confirmarModalRequisa() {
   document.getElementById("modal-requisa").style.display = "none";
-  if (!gastoPendienteRequisa) return;
-  confirmarGasto(gastoPendienteRequisa);
-  gastoPendienteRequisa = null;
+  if (!_gastoPendiente) return;
+  _ejecutarGasto(_gastoPendiente);
+  _gastoPendiente = null;
 }
 
-function confirmarGasto(g) {
-  // 1. Encolar fila en Gastos
-  syncFila(CONFIG.sheets.gastos, [
-    g.fecha, g.fondo, g.descripcion, g.montoInt,
-    g.medioPago, g.tcCuenta || "", g.cuotas || "No", g.notas || "",
-    g.sobregasto > 0 ? "Sobregasto" : ""
-  ]);
-
-  // 2. Descontar del fondo en memoria
-  descontarFondo(g.fondo, g.montoInt);
-
-  // 3. Aplicar requisa si hay sobregasto
-  if (g.sobregasto > 0 && g.requisas.length > 0) {
-    aplicarRequisa(g.requisas);
+function _ejecutarGasto(g) {
+  // 1. Descontar del ítem si aplica
+  if (g.item) {
+    if (!g.item.saldoActual) g.item.saldoActual = 0;
+    g.item.saldoActual -= g.montoInt;
   }
 
+  // 2. Descontar del fondo
+  g.fondo.saldoActual = (g.fondo.saldoActual || 0) - g.montoInt;
+
+  // 3. Aplicar requisas
+  if (g.reqInterna.length > 0) aplicarRequisaInterna(g.fondo, g.itemId, g.reqInterna);
+  if (g.reqExterna.length > 0) aplicarRequisaExterna(g.reqExterna);
+
   // 4. Actualizar TC si aplica
-  if (g.medioPago === "TC" && g.tcCuenta) {
-    const idx = tcsData.findIndex(t => t["Nombre"] === g.tcCuenta);
-    if (idx >= 0) {
-      const nuevoUsado = (parseInt(tcsData[idx]["Usado"]) || 0) + g.montoInt;
-      tcsData[idx]["Usado"] = nuevoUsado;
-      syncCelda(CONFIG.sheets.tcs, `D${idx + 3}`, nuevoUsado);
-    }
+  if (g.medioPago === "TC" && g.cuenta) {
+    const tc = STATE.tcs.find(t => t.nombre === g.cuenta);
+    if (tc) tc.usado = (tc.usado || 0) + g.montoInt;
   }
 
   // 5. Actualizar débito si aplica
-  if (g.medioPago === "Débito" && g.tcCuenta) {
-    const idx = debitosData.findIndex(d => d["Nombre"] === g.tcCuenta);
-    if (idx >= 0) {
-      const nuevoSaldo = (parseInt(debitosData[idx]["Saldo Actual"]) || 0) - g.montoInt;
-      debitosData[idx]["Saldo Actual"] = nuevoSaldo;
-      syncCelda(CONFIG.sheets.debitos, `C${idx + 3}`, nuevoSaldo);
-    }
+  if (g.medioPago === "Débito" && g.cuenta) {
+    const deb = STATE.debitos.find(d => d.nombre === g.cuenta);
+    if (deb) deb.saldo = (deb.saldo || 0) - g.montoInt;
   }
 
-  mostrarExito(g.sobregasto > 0 ? "Gasto registrado con requisa ✓" : "Gasto registrado ✓");
+  // 6. Persistir config (saldos)
+  marcarDirty();
+
+  // 7. Guardar en Excel (background)
+  const reqDesc = [...g.reqInterna, ...g.reqExterna].map(r=>`${r.nombre}:-${formatCLP(r.monto)}`).join(", ");
+  agregarGasto([
+    g.fecha,
+    g.fondo.nombre,
+    g.item?.nombre || "",
+    g.montoInt,
+    g.medioPago,
+    g.cuenta || "",
+    g.cuotas || "No",
+    g.notas || "",
+    reqDesc || ""
+  ]);
+
+  mostrarExito(g.reqInterna.length + g.reqExterna.length > 0
+    ? "Gasto registrado con requisa ✓" : "Gasto registrado ✓");
 }
 
 function hoyFormato() {
   const d = new Date();
-  return `${d.getDate().toString().padStart(2,"0")}/${(d.getMonth()+1).toString().padStart(2,"0")}/${d.getFullYear()}`;
+  return `${String(d.getDate()).padStart(2,"0")}/${String(d.getMonth()+1).padStart(2,"0")}/${d.getFullYear()}`;
 }
