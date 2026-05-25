@@ -32,6 +32,27 @@
   </div>
 </div>
 
+
+<!-- MODAL PAGO TC -->
+<div id="modal-pago-tc" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:300;align-items:center;justify-content:center;padding:16px">
+  <div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:20px;width:100%;max-width:360px">
+    <div style="font-size:17px;font-weight:700;margin-bottom:4px">💳 Pagar <span id="pago-tc-nombre"></span></div>
+    <div style="font-size:13px;color:var(--text2);margin-bottom:16px">Saldo actual: <strong style="color:var(--red)" id="pago-tc-saldo"></strong></div>
+    <div class="campo-grid">
+      <div class="campo-field full"><label>Monto a pagar ($)</label>
+        <input type="number" id="pago-tc-monto" min="1"></div>
+      <div class="campo-field full"><label>Desde cuenta débito</label>
+        <select id="pago-tc-debito"></select></div>
+      <div class="campo-field full"><label>Descontar de fondo</label>
+        <select id="pago-tc-fondo"></select></div>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:16px">
+      <button class="btn btn-ghost btn-sm" style="flex:1" onclick="cerrarModalPagoTC()">Cancelar</button>
+      <button class="btn btn-success btn-sm" style="flex:1" onclick="confirmarPagoTC()">✓ Confirmar pago</button>
+    </div>
+  </div>
+</div>
+
 <!-- LOGIN -->
 <div id="loginScreen" style="display:none">
   <div class="login-card">
@@ -93,7 +114,7 @@
 
     <!-- FONDOS -->
     <div id="vista-fondos" class="vista" style="display:none">
-      <div class="sec-header"><h2>Fondos</h2></div>
+      <div class="sec-header"><h2>Fondos</h2><button id="btn-toggle-items" class="btn btn-ghost btn-sm" onclick="toggleDetalleItems()">▼ Ver ítems</button></div>
       <div class="card"><div id="lista-fondos"></div></div>
       <div class="card">
         <div class="card-title">Presupuesto vs Ejecución</div>
@@ -160,6 +181,17 @@
         <div id="sim-minimos"></div>
       </div>
       <div id="lista-deuda"></div>
+    </div>
+
+
+    <!-- LOG -->
+    <div id="vista-log" class="vista" style="display:none">
+      <div class="sec-header">
+        <h2>📋 Log de transacciones</h2>
+      </div>
+      <div class="card">
+        <div id="lista-log"></div>
+      </div>
     </div>
 
     <!-- AJUSTES -->
@@ -264,6 +296,10 @@
       <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>
       Deuda
     </button>
+    <button class="nav-item" data-vista="log">
+      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>
+      Log
+    </button>
     <button class="nav-item" data-vista="ajustes">
       <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
       Ajustes
@@ -280,6 +316,7 @@
 <script src="js/cloud.js"></script>
 <script src="js/logica.js"></script>
 <script src="js/gastos.js"></script>
+<script src="js/pagos.js"></script>
 <script src="js/ingresos.js"></script>
 <script src="js/deuda.js"></script>
 <script src="js/ajustes.js"></script>
