@@ -1,56 +1,48 @@
+// ══ CLOUD ADAPTER — OneDrive via Microsoft Graph ═══════════════════════════
 const GRAPH = "https://graph.microsoft.com/v1.0";
 
 // ── Helpers HTTP ───────────────────────────────────────────────────────────
-async function apiGet(url) {
+async function apiCall(method, url, body=null) {
   const token = await obtenerToken();
   if (!token) return null;
-  const r = await fetch(GRAPH + url, { headers: { Authorization: `Bearer ${token}` } });
-  if (!r.ok) { console.error("GET", url, r.status); return null; }
-  return r.json();
+  const opts = {
+    method,
+    headers: { Authorization:`Bearer ${token}`, "Content-Type":"application/json" }
+  };
+  if (body) opts.body = typeof body==="string" ? body : JSON.stringify(body);
+  try {
+    const r = await fetch(GRAPH + url, opts);
+    if (!r.ok) {
+      logSync(`API ${method} ${url} → ${r.status}`);
+      return null;
+    }
+    return method==="DELETE" ? true : r.json();
+  } catch(e) {
+    logSync(`API error: ${e.message}`);
+    return null;
+  }
 }
 
-async function apiPut(url, body, contentType = "application/json") {
-  const token = await obtenerToken();
-  if (!token) return null;
-  const r = await fetch(GRAPH + url, {
-    method: "PUT",
-    headers: { Authorization: `Bearer ${token}`, "Content-Type": contentType },
-    body: typeof body === "string" ? body : JSON.stringify(body)
-  });
-  if (!r.ok) { console.error("PUT", url, r.status); return null; }
-  return r.json();
-}
-
-async function apiPatch(url, body) {
-  const token = await obtenerToken();
-  if (!token) return null;
-  const r = await fetch(GRAPH + url, {
-    method: "PATCH",
-    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-    body: JSON.stringify(body)
-  });
-  if (!r.ok) { console.error("PATCH", url, r.status); return null; }
-  return r.json();
-}
+const apiGet   = url       => apiCall("GET",   url);
+const apiPatch = (url,body)=> apiCall("PATCH", url, body);
 
 // ── Config JSON ────────────────────────────────────────────────────────────
 async function cargarConfig() {
   try {
     const token = await obtenerToken();
     const r = await fetch(`${GRAPH}/me/drive/root:/${CONFIG.configFile}:/content`, {
-      headers: { Authorization: `Bearer ${token}` }
+      headers: { Authorization:`Bearer ${token}` }
     });
     if (r.status === 404) {
-      // Primera vez — crear config por defecto
-      console.log("Config no encontrada, creando por defecto...");
-      const defConfig = configDefault();
-      await guardarConfig(defConfig);
-      return defConfig;
+      logSync("Config no encontrada — creando por defecto");
+      const def = configDefault();
+      await guardarConfig(def);
+      return def;
     }
     if (!r.ok) return null;
     return r.json();
   } catch(e) {
-    console.error("cargarConfig error:", e);
+    logSync(`cargarConfig error: ${e.message}`);
     return null;
   }
 }
@@ -59,124 +51,151 @@ async function guardarConfig(data) {
   try {
     const token  = await obtenerToken();
     const json   = JSON.stringify(data, null, 2);
-    const blob   = new Blob([json], { type: "application/json" });
-    const buffer = await blob.arrayBuffer();
     const r = await fetch(`${GRAPH}/me/drive/root:/${CONFIG.configFile}:/content`, {
       method: "PUT",
-      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-      body: buffer
+      headers: { Authorization:`Bearer ${token}`, "Content-Type":"application/json" },
+      body: json
     });
-    if (!r.ok) { console.error("guardarConfig error:", r.status); return false; }
-    STATE.dirty = false;
-    setSyncStatus("idle");
-    return true;
+    return r.ok;
   } catch(e) {
-    console.error("guardarConfig excepción:", e);
+    logSync(`guardarConfig error: ${e.message}`);
     return false;
   }
 }
 
-// Convierte STATE a objeto serializable y guarda
-async function persistirEstado() {
-  const data = {
-    tcs:          STATE.tcs,
-    debitos:      STATE.debitos,
-    fondos:       STATE.fondos,
-    tiposIngreso: STATE.tiposIngreso,
-    requisas:     STATE.requisas,
-    pagosAuto:    STATE.pagosAuto,
-    metas:        STATE.metas
-  };
-  return guardarConfig(data);
-}
+// ── Movimientos Excel — tabla con rango explícito ──────────────────────────
+let _gastosFileId = null;
 
-// Marca estado como sucio y programa guardado
-let saveTimer = null;
-function marcarDirty() {
-  STATE.dirty = true;
-  setSyncStatus("pending");
-  if (saveTimer) clearTimeout(saveTimer);
-  saveTimer = setTimeout(async () => {
-    setSyncStatus("syncing");
-    const ok = await persistirEstado();
-    setSyncStatus(ok ? "idle" : "error");
-    if (!ok) setTimeout(() => { if (STATE.dirty) persistirEstado(); }, 8000);
-  }, 2000);
-}
-
-// ── Gastos Excel ───────────────────────────────────────────────────────────
 async function buscarGastosFile() {
-  if (STATE.gastosFileId) return STATE.gastosFileId;
+  if (_gastosFileId) return _gastosFileId;
   const data = await apiGet(`/me/drive/root:/${CONFIG.gastosFile}`);
-  if (data?.id) { STATE.gastosFileId = data.id; return data.id; }
+  if (data?.id) { _gastosFileId = data.id; return _gastosFileId; }
+  logSync("Archivo de gastos no encontrado");
   return null;
 }
 
-async function agregarGasto(valores) {
-  // valores: [fecha, fondoNombre, itemNombre, monto, medioPago, cuenta, cuotas, notas, sobregasto]
+// Leer todos los movimientos desde Excel
+async function leerMovimientos() {
+  try {
+    const id = await buscarGastosFile();
+    if (!id) return [];
+
+    // Usar tabla definida (más seguro que usedRange)
+    let data = await apiGet(
+      `/me/drive/items/${id}/workbook/worksheets/Movimientos/tables/TMovimientos/rows`
+    );
+
+    // Fallback a usedRange si no existe la tabla aún
+    if (!data) {
+      data = await apiGet(
+        `/me/drive/items/${id}/workbook/worksheets/Movimientos/usedRange`
+      );
+      if (!data?.values || data.values.length < 2) return [];
+      const headers = data.values[0];
+      return data.values.slice(1)
+        .filter(row => row.some(c=>c!==""))
+        .map(row => {
+          const obj = {};
+          headers.forEach((h,i) => { obj[h] = row[i] ?? ""; });
+          // Parsear distribucion JSON si existe
+          if (obj.distribucion) {
+            try { obj.distribucion = JSON.parse(obj.distribucion); } catch{}
+          }
+          if (obj.requisas) {
+            try { obj.requisas = JSON.parse(obj.requisas); } catch{}
+          }
+          return obj;
+        });
+    }
+
+    // Respuesta de tabla
+    if (data.value) {
+      return data.value
+        .filter(r => r.values?.[0]?.some(c=>c!==""))
+        .map(r => {
+          const obj = {};
+          EXCEL_COLS.forEach((h,i) => { obj[h] = r.values[0][i] ?? ""; });
+          if (obj.distribucion) { try{obj.distribucion=JSON.parse(obj.distribucion);}catch{} }
+          if (obj.requisas)     { try{obj.requisas=JSON.parse(obj.requisas);}catch{} }
+          return obj;
+        });
+    }
+    return [];
+  } catch(e) {
+    logSync(`leerMovimientos error: ${e.message}`);
+    return [];
+  }
+}
+
+// Agregar un movimiento al Excel
+async function agregarMovimiento(mov) {
   try {
     const id = await buscarGastosFile();
     if (!id) return false;
-    const rango = await apiGet(`/me/drive/items/${id}/workbook/worksheets/Gastos/usedRange`);
+
+    // Intentar agregar a tabla primero
+    const fila = EXCEL_COLS.map(col => {
+      const v = mov[col];
+      if (v === null || v === undefined) return "";
+      if (typeof v === "object") return JSON.stringify(v);
+      return v;
+    });
+
+    // Buscar última fila usada
+    const rango = await apiGet(
+      `/me/drive/items/${id}/workbook/worksheets/Movimientos/usedRange`
+    );
     if (!rango) return false;
-    const fila    = rango.rowCount + 1;
-    const colFin  = String.fromCharCode(64 + valores.length);
+
+    const ultimaFila = rango.rowCount + 1;
+    const colFin     = String.fromCharCode(64 + EXCEL_COLS.length);
     const r = await apiPatch(
-      `/me/drive/items/${id}/workbook/worksheets/Gastos/range(address='A${fila}:${colFin}${fila}')`,
-      { values: [valores] }
+      `/me/drive/items/${id}/workbook/worksheets/Movimientos/range(address='A${ultimaFila}:${colFin}${ultimaFila}')`,
+      { values: [fila] }
     );
     return r !== null;
   } catch(e) {
-    console.error("agregarGasto error:", e);
+    logSync(`agregarMovimiento error: ${e.message}`);
     return false;
   }
+}
+
+// Función de compatibilidad para el código existente
+async function agregarGasto(valores) {
+  // Wrapper para código heredado — convertir array al nuevo formato
+  return agregarMovimiento(timestamped({
+    id:          uid(),
+    tipo:        OP.GASTO,
+    fecha:       valores[0] || hoyFormato(),
+    fondoNombre: valores[1] || "",
+    itemNombre:  valores[2] || "",
+    monto:       valores[3] || 0,
+    descripcion: valores[2] || "",
+    medioPago:   valores[4] || "",
+    debitoNombre:valores[4]==="Débito"?valores[5]:"",
+    tcNombre:    valores[4]==="TC"?valores[5]:"",
+    cuotas:      valores[6] || "No",
+    notas:       valores[7] || "",
+    requisa:     valores[8] || ""
+  }));
 }
 
 async function agregarIngreso(valores) {
-  try {
-    const id = await buscarGastosFile();
-    if (!id) return false;
-    const rango = await apiGet(`/me/drive/items/${id}/workbook/worksheets/Ingresos/usedRange`);
-    if (!rango) return false;
-    const fila   = rango.rowCount + 1;
-    const colFin = String.fromCharCode(64 + valores.length);
-    const r = await apiPatch(
-      `/me/drive/items/${id}/workbook/worksheets/Ingresos/range(address='A${fila}:${colFin}${fila}')`,
-      { values: [valores] }
-    );
-    return r !== null;
-  } catch(e) {
-    console.error("agregarIngreso error:", e);
-    return false;
-  }
+  return agregarMovimiento(timestamped({
+    id:          uid(),
+    tipo:        OP.INGRESO,
+    fecha:       valores[0] || hoyFormato(),
+    fondoNombre: valores[1] || "",
+    descripcion: valores[2] || "",
+    monto:       valores[3] || 0,
+    distribucion:valores[4] || "",
+    notas:       valores[5] || ""
+  }));
 }
 
-async function leerGastos() {
-  try {
-    const id = await buscarGastosFile();
-    if (!id) return [];
-    const data = await apiGet(`/me/drive/items/${id}/workbook/worksheets/Gastos/usedRange`);
-    if (!data?.values || data.values.length < 2) return [];
-    const headers = data.values[0];
-    return data.values.slice(1).map(row => {
-      const obj = {};
-      headers.forEach((h, i) => { obj[h] = row[i] ?? ""; });
-      return obj;
-    });
-  } catch(e) { return []; }
-}
-
-async function leerIngresos() {
-  try {
-    const id = await buscarGastosFile();
-    if (!id) return [];
-    const data = await apiGet(`/me/drive/items/${id}/workbook/worksheets/Ingresos/usedRange`);
-    if (!data?.values || data.values.length < 2) return [];
-    const headers = data.values[0];
-    return data.values.slice(1).map(row => {
-      const obj = {};
-      headers.forEach((h, i) => { obj[h] = row[i] ?? ""; });
-      return obj;
-    });
-  } catch(e) { return []; }
+// marcarDirty — alias para compatibilidad con código existente
+function marcarDirty() {
+  STATE._dirty = true;
+  setSyncStatus("pending");
+  scheduleSave();
 }

@@ -355,36 +355,50 @@ function renderDeudaManual() {
 
 // ══ INIT ══════════════════════════════════════════════════════════════════════
 async function init() {
+  await abrirDB(); // IndexedDB primero
+
   loading(true, "Iniciando sesión...");
   await msalInstance.handleRedirectPromise();
   const accounts = msalInstance.getAllAccounts();
+
   if (accounts.length === 0) {
     loading(false);
     document.getElementById("loginScreen").style.display = "flex";
     document.getElementById("appShell").style.display    = "none";
     return;
   }
+
   currentAccount = accounts[0];
   document.getElementById("loginScreen").style.display = "none";
   document.getElementById("appShell").style.display    = "block";
   document.getElementById("topbar-user").textContent   = obtenerUsuario();
 
-  loading(true, "Cargando configuración...");
-  try {
-    const cfg = await cargarConfig();
-    if (cfg) cargarEstadoDesdeConfig(cfg);
-    else mostrarError("No se pudo cargar la configuración.");
-  } catch(e) {
-    console.error("init error:", e);
-    mostrarError("Error al conectar con OneDrive.");
+  if (!STATE._online) {
+    loading(true, "Sin conexión — cargando datos locales...");
+    const ok = await arrancarOffline();
+    if (!ok) mostrarError("Sin conexión y sin datos locales. Conéctate y recarga.");
+  } else {
+    loading(true, "Sincronizando con OneDrive...");
+    try {
+      await ejecutarSync();
+    } catch(e) {
+      console.error("init sync error:", e);
+      const ok = await arrancarOffline();
+      if (!ok) mostrarError("Error al conectar con OneDrive.");
+    }
   }
 
   renderDashboard();
   renderFormGasto();
   renderFormIngreso();
-  setSyncStatus("idle");
+  iniciarAutoSync();
   loading(false);
   mostrarVista("dashboard");
+}
+
+// Compatibilidad — ya no necesaria, rebuildState maneja esto
+function cargarEstadoDesdeConfig(cfg) {
+  rebuildState(cfg, STATE.movimientos);
 }
 
 // ══ LISTENERS ══════════════════════════════════════════════════════════════════

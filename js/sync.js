@@ -1,25 +1,131 @@
+// ══ SYNC ENGINE — pull → rebuild → push ═══════════════════════════════════
+let _saveTimer    = null;
+let _syncTimer    = null;
+let _syncRunning  = false;
+
+// ── Indicador visual ───────────────────────────────────────────────────────
 function setSyncStatus(estado) {
   const el = document.getElementById("sync-indicator");
   if (!el) return;
-  switch(estado) {
-    case "idle":
-      el.innerHTML = `<span class="sync-dot ok" title="Sincronizado"></span>`;
-      break;
-    case "pending":
-      el.innerHTML = `<span class="sync-dot pending" title="Cambios pendientes"></span>`;
-      break;
-    case "syncing":
-      el.innerHTML = `<span class="sync-dot syncing" title="Guardando..."></span>`;
-      break;
-    case "error":
-      el.innerHTML = `<span class="sync-dot error" title="Error — reintentando"></span>`;
-      break;
-  }
+  const estados = {
+    idle:     { dot:"ok",      title:"Sincronizado" },
+    pending:  { dot:"pending", title:"Cambios pendientes" },
+    syncing:  { dot:"syncing", title:"Sincronizando..." },
+    offline:  { dot:"offline", title:"Sin conexión — cambios guardados localmente" },
+    error:    { dot:"error",   title:"Error de sync — reintentando" }
+  };
+  const s = estados[estado] || estados.idle;
+  el.innerHTML = `<span class="sync-dot ${s.dot}"></span>`;
+  el.title = s.title;
 }
 
 function forzarSync() {
-  if (!STATE.dirty) { mostrarExito("Todo sincronizado ✓"); return; }
-  if (saveTimer) clearTimeout(saveTimer);
-  setSyncStatus("syncing");
-  persistirEstado().then(ok => setSyncStatus(ok ? "idle" : "error"));
+  if (!STATE._online) { mostrarError("Sin conexión — los cambios se guardarán al reconectar"); return; }
+  if (_saveTimer) clearTimeout(_saveTimer);
+  ejecutarSync();
 }
+
+// ── Programar guardado con debounce ───────────────────────────────────────
+function scheduleSave() {
+  if (_saveTimer) clearTimeout(_saveTimer);
+  _saveTimer = setTimeout(() => {
+    if (STATE._online) ejecutarSync();
+    else setSyncStatus("offline");
+  }, 2000);
+}
+
+// ── Ciclo de sync completo: pull → rebuild → aplicar pending → push ────────
+async function ejecutarSync() {
+  if (_syncRunning) return;
+  _syncRunning = true;
+  setSyncStatus("syncing");
+
+  try {
+    // 1. PULL — traer config actual del cloud
+    const cloudConfig = await cargarConfig();
+    if (!cloudConfig) throw new Error("No se pudo leer la configuración del cloud");
+
+    // 2. PULL — traer movimientos del cloud
+    const cloudMovs = await leerMovimientos();
+
+    // 3. REBUILD — recalcular todo desde cloud
+    rebuildState(cloudConfig, cloudMovs);
+
+    // 4. APLICAR PENDING OPS — operaciones locales pendientes
+    const pending = await pendingGetAll();
+    for (const op of pending) {
+      _aplicarOpConfig(op.op, op.payload);
+      await pendingMarkSynced(op.id);
+      logSync(`pending aplicado: ${op.op}`);
+    }
+
+    // 5. PUSH — guardar config actualizada
+    const configActualizada = _configSnapshot();
+    const ok = await guardarConfig(configActualizada);
+    if (!ok) throw new Error("Error al guardar config en cloud");
+
+    // 6. GUARDAR SNAPSHOT LOCAL
+    await snapshotSave({ config: configActualizada, movimientos: cloudMovs });
+    await cacheSet("lastConfig", configActualizada);
+    await cacheSet("lastMovimientos", cloudMovs);
+
+    STATE._lastSync = now();
+    STATE._dirty    = false;
+    setSyncStatus("idle");
+    logSync(`sync completo — ${pending.length} ops aplicadas`);
+
+  } catch(e) {
+    console.error("Sync error:", e);
+    setSyncStatus("error");
+    // Reintentar en 10s
+    setTimeout(() => { if(STATE._online) ejecutarSync(); }, 10000);
+  } finally {
+    _syncRunning = false;
+  }
+}
+
+// ── Arranque offline ───────────────────────────────────────────────────────
+async function arrancarOffline() {
+  logSync("Arrancando en modo offline...");
+  // Intentar usar cache local
+  const cached = await cacheGet("lastConfig");
+  const movs   = await cacheGet("lastMovimientos");
+  if (cached) {
+    rebuildState(cached, movs || []);
+    setSyncStatus("offline");
+    mostrarError("Sin conexión — usando datos locales");
+    return true;
+  }
+  // Intentar snapshot
+  const snap = await snapshotGetLatest();
+  if (snap) {
+    rebuildState(snap.config, snap.movimientos || []);
+    setSyncStatus("offline");
+    mostrarError("Sin conexión — usando último snapshot");
+    return true;
+  }
+  return false;
+}
+
+// ── Autosync cada 20s si hay pending ops ──────────────────────────────────
+function iniciarAutoSync() {
+  if (_syncTimer) clearInterval(_syncTimer);
+  _syncTimer = setInterval(async () => {
+    if (!STATE._online || _syncRunning) return;
+    const count = await pendingCount();
+    if (count > 0) ejecutarSync();
+  }, CONFIG.syncInterval);
+}
+
+// ── Detectar online/offline ───────────────────────────────────────────────
+window.addEventListener("online",  () => {
+  STATE._online = true;
+  setSyncStatus("pending");
+  logSync("Conexión restaurada — sincronizando...");
+  ejecutarSync();
+});
+window.addEventListener("offline", () => {
+  STATE._online = false;
+  setSyncStatus("offline");
+  logSync("Sin conexión — modo offline activado");
+});
