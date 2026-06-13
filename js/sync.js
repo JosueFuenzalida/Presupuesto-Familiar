@@ -48,6 +48,15 @@ async function ejecutarSync() {
     // 2. PULL — traer movimientos del cloud
     const cloudMovs = await leerMovimientos();
 
+    const pendingMovs = await pendingGetAll();
+const todosMovs = [
+  ...cloudMovs,
+  ...pendingMovs
+    .filter(op => [OP.GASTO,OP.INGRESO,OP.PAGO_TC].includes(op.op))
+    .map(op => timestamped({ id:op.id, tipo:op.op, ...op.payload }))
+];
+rebuildState(cloudConfig, todosMovs);
+
     // 3. REBUILD — recalcular todo desde cloud
     rebuildState(cloudConfig, cloudMovs);
 
