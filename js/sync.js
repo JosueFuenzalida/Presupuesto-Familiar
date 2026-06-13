@@ -49,9 +49,9 @@ async function ejecutarSync() {
     const cloudMovs = await leerMovimientos();
 
     const pendingMovs = await pendingGetAll();
-const todosMovs = [
-  ...cloudMovs,
-  ...pendingMovs
+    const todosMovs = [
+    ...cloudMovs,
+    ...pendingMovs
     .filter(op => [OP.GASTO,OP.INGRESO,OP.PAGO_TC].includes(op.op))
     .map(op => timestamped({ id:op.id, tipo:op.op, ...op.payload }))
 ];
