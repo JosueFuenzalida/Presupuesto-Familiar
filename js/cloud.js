@@ -176,7 +176,7 @@ async function agregarGasto(valores) {
     tcNombre:    valores[4]==="TC"?valores[5]:"",
     cuotas:      valores[6] || "No",
     notas:       valores[7] || "",
-    requisa:     valores[8] || ""
+    requisas:     valores[8] || ""
   }));
 }
 
