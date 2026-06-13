@@ -61,7 +61,7 @@ let STATE = {
 const EXCEL_COLS = [
   "id","fecha","tipo","monto","fondoId","fondoNombre",
   "itemId","itemNombre","tcNombre","debitoNombre",
-  "descripcion","cuotas","notas","requisa",
+  "descripcion","cuotas","notas","requisas",
   "distribucion",
   "createdAt","updatedAt","deviceId","reversaDeId"
 ];
